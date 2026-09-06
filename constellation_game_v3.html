@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>STAR ALIGN - こと座</title>
+<style>
+:root{--bg:#020617;--panel:rgba(7,15,35,.78);--line:#243b67;--text:#f7fbff;--sub:#a7b7d4}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);touch-action:none}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+.panel{background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 35px rgba(0,0,0,.25)}
+#top{position:absolute;left:12px;right:12px;top:12px;display:flex;gap:10px}
+#mission{padding:11px 13px;flex:1}
+#mission b{display:block;font-size:15px;margin-bottom:3px}
+.small{font-size:11px;color:var(--sub);line-height:1.45}
+#progress{width:120px;padding:10px 11px}
+#progress .label{font-size:10px;color:var(--sub)}
+#progress .value{font-size:20px;font-weight:800;margin-top:2px}
+#bar{height:6px;background:#11213d;border-radius:999px;margin-top:7px;overflow:hidden}
+#bar>div{height:100%;width:0%;background:linear-gradient(90deg,#60a5fa,#a78bfa)}
+#bottom{position:absolute;left:12px;right:12px;bottom:12px;display:flex;gap:10px;align-items:end}
+#hint{padding:10px 12px;flex:1}
+#hint b{font-size:13px}
+#buttons{pointer-events:auto;display:flex;gap:8px}
+button{border:1px solid #35527f;background:#102343;color:#fff;border-radius:14px;padding:11px 13px;font-weight:800;font-size:12px}
+#restart{background:#24172c;border-color:#5a335f}
+#phaseBadge{position:absolute;left:50%;transform:translateX(-50%);top:98px;padding:7px 11px;border-radius:999px;background:rgba(3,10,24,.72);border:1px solid #203b64;font-size:11px}
+#toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);padding:17px 22px;text-align:center;opacity:0;transition:.2s;min-width:240px}
+#toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#toast .big{font-size:24px;font-weight:900}
+#toast .sub{font-size:12px;color:var(--sub);margin-top:5px}
+#vegaTag{position:absolute;display:none;padding:6px 9px;border-radius:999px;background:rgba(45,34,10,.88);border:1px solid #705e24;color:#fff2b8;font-size:11px;font-weight:800;transform:translate(-50%,-140%)}
+@media(max-width:700px){#progress{width:102px}#progress .value{font-size:17px}button{padding:10px 11px;font-size:11px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="top">
+    <div id="mission" class="panel">
+      <b id="missionTitle">① 見る方向を合わせよう</b>
+      <div class="small" id="missionText">指で宇宙をくるくる回して、星が「こと座」に見える向きを探そう。</div>
+    </div>
+    <div id="progress" class="panel">
+      <div class="label">ALIGN</div><div class="value" id="alignValue">0%</div><div id="bar"><div></div></div>
+    </div>
+  </div>
+  <div id="phaseBadge">LEVEL 1 · LYRA / こと座</div>
+  <div id="vegaTag">★ ベガを動かそう</div>
+  <div id="toast" class="panel"><div class="big" id="toastBig">方向OK！</div><div class="sub" id="toastSub">次は一等星ベガだけを正しい位置へ。</div></div>
+  <div id="bottom">
+    <div id="hint" class="panel"><b id="hintTitle">ドラッグ：視点を回転</b><div class="small" id="hintText">正しい向きに近づくほど星座線が見えてきます。</div></div>
+    <div id="buttons"><button id="hintBtn">ヒント</button><button id="restart">やり直す</button></div>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const missionTitle=document.getElementById("missionTitle"),missionText=document.getElementById("missionText");
+const alignValue=document.getElementById("alignValue"),barFill=document.querySelector("#bar>div");
+const hintTitle=document.getElementById("hintTitle"),hintText=document.getElementById("hintText");
+const toast=document.getElementById("toast"),toastBig=document.getElementById("toastBig"),toastSub=document.getElementById("toastSub");
+const vegaTag=document.getElementById("vegaTag");
+let W=0,H=0,DPR=1;
+function resize(){const r=canvas.getBoundingClientRect();DPR=Math.min(devicePixelRatio||1,2);canvas.width=r.width*DPR;canvas.height=r.height*DPR;W=r.width;H=r.height;ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener("resize",resize);resize();
+const TAU=Math.PI*2,targetYaw=.62,targetPitch=-.23;
+const stars=[
+{id:"vega",name:"ベガ",p:[-1.20,1.20,.85],r:7.2,color:"#dff6ff"},
+{id:"zeta",name:"ζ",p:[-.55,.45,-.55],r:4.2,color:"#e9f5ff"},
+{id:"delta",name:"δ",p:[.22,.55,.65],r:4.2,color:"#f7fbff"},
+{id:"beta",name:"β",p:[.65,-.45,-.75],r:4.2,color:"#fff2de"},
+{id:"gamma",name:"γ",p:[-.42,-.62,.35],r:4.2,color:"#e6f2ff"}];
+const lines=[["vega","zeta"],["zeta","delta"],["delta","beta"],["beta","gamma"],["gamma","zeta"]];
+const bg=Array.from({length:220},()=>({x:Math.random(),y:Math.random(),s:.4+Math.random()*1.4,a:.25+Math.random()*.7}));
+let state;
+function reset(){state={yaw:-1.15,pitch:.48,phase:1,locked:false,drag:false,lastX:0,lastY:0,vegaOffset:[.55,-.28],guide:false,completed:false,flash:0};toast.classList.remove("show");updateHUD()}
+reset();
+function rotY(p,a){const[x,y,z]=p,c=Math.cos(a),s=Math.sin(a);return[x*c+z*s,y,-x*s+z*c]}
+function rotX(p,a){const[x,y,z]=p,c=Math.cos(a),s=Math.sin(a);return[x,y*c-z*s,y*s+z*c]}
+function project(p){let q=rotY(p,state.yaw);q=rotX(q,state.pitch);const z=q[2]+6,f=Math.min(W,H)*.95;return{x:W/2+q[0]*f/z,y:H/2-q[1]*f/z,depth:q[2]}}
+function diff(a,b){let d=(a-b+Math.PI)%TAU-Math.PI;return Math.abs(d)}
+function align(){const dy=diff(state.yaw,targetYaw),dp=Math.abs(state.pitch-targetPitch),e=Math.sqrt(dy*dy+dp*dp*1.5);return Math.max(0,Math.min(1,1-e/1.65))}
+function projected(){const a=stars.map(s=>({s,...project(s.p)}));if(state.phase>=2){const v=a.find(o=>o.s.id==="vega"),m=Math.min(W,H);v.x+=state.vegaOffset[0]*m;v.y+=state.vegaOffset[1]*m}return a}
+function background(){let g=ctx.createRadialGradient(W*.5,H*.46,20,W*.5,H*.46,Math.max(W,H)*.8);g.addColorStop(0,"#07112a");g.addColorStop(.55,"#03091b");g.addColorStop(1,"#01030b");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);for(const s of bg){ctx.globalAlpha=s.a;ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(s.x*W,s.y*H,s.s,0,TAU);ctx.fill()}ctx.globalAlpha=1}
+function draw(){
+background();const ps=projected(),a=align();let la=state.phase===1?Math.max(0,(a-.48)/.52):.85;
+if(la>0){ctx.lineCap="round";ctx.lineWidth=2;for(const [x,y] of lines){const A=ps.find(o=>o.s.id===x),B=ps.find(o=>o.s.id===y);ctx.strokeStyle=`rgba(120,205,255,${la*.62})`;ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke()}}
+if(state.phase===2&&!state.completed&&(state.guide||a>.97)){const t=project(stars[0].p);ctx.save();ctx.globalAlpha=state.guide?.8:.28;ctx.strokeStyle="#ffe28a";ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(t.x,t.y,16,0,TAU);ctx.stroke();ctx.restore()}
+for(const o of ps.sort((a,b)=>a.depth-b.depth)){const v=o.s.id==="vega",glow=v?26:14,g=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,glow);g.addColorStop(0,v?"rgba(255,236,163,.95)":"rgba(170,220,255,.75)");g.addColorStop(1,"rgba(255,255,255,0)");ctx.fillStyle=g;ctx.beginPath();ctx.arc(o.x,o.y,glow,0,TAU);ctx.fill();ctx.fillStyle=o.s.color;ctx.beginPath();ctx.arc(o.x,o.y,o.s.r,0,TAU);ctx.fill();if(v){ctx.strokeStyle="rgba(255,225,120,.9)";ctx.beginPath();ctx.arc(o.x,o.y,o.s.r+5,0,TAU);ctx.stroke()}}
+if(state.phase===1&&a>.86){ctx.strokeStyle=`rgba(125,235,180,${(a-.86)/.14*.7})`;ctx.lineWidth=3;ctx.beginPath();ctx.arc(W/2,H/2,Math.min(W,H)*.34,0,TAU);ctx.stroke()}
+if(state.flash>0){ctx.fillStyle=`rgba(255,255,255,${state.flash*.16})`;ctx.fillRect(0,0,W,H);state.flash*=.88}
+updateTag(ps);updateProgress(a);requestAnimationFrame(draw)}
+requestAnimationFrame(draw);
+function updateProgress(a){const p=Math.round(a*100);alignValue.textContent=p+"%";barFill.style.width=p+"%";if(state.phase===1&&a>.985&&!state.locked){state.locked=true;setTimeout(()=>{if(state.phase===1){state.yaw=targetYaw;state.pitch=targetPitch;state.phase=2;state.flash=1;showToast("方向OK！","次は一等星ベガだけを正しい位置へ。");updateHUD()}},250)}}
+function updateTag(ps){if(state.phase!==2||state.completed){vegaTag.style.display="none";return}const v=ps.find(o=>o.s.id==="vega");vegaTag.style.display="block";vegaTag.style.left=v.x+"px";vegaTag.style.top=v.y+"px"}
+function updateHUD(){if(state.phase===1){missionTitle.textContent="① 見る方向を合わせよう";missionText.textContent="指で宇宙をくるくる回して、星が「こと座」に見える向きを探そう。";hintTitle.textContent="ドラッグ：視点を回転";hintText.textContent="正しい向きに近づくほど星座線が見えてきます。"}else if(!state.completed){missionTitle.textContent="② 一等星ベガだけを動かそう";missionText.textContent="見る方向は正解。ズレているのはベガだけ。正しい位置までドラッグしよう。";hintTitle.textContent="ベガをドラッグ";hintText.textContent="黄色い一等星だけ動かせます。ほかの星はそのまま。"}else{missionTitle.textContent="MISSION COMPLETE";missionText.textContent="こと座完成！ 見る方向とベガの位置、両方そろいました。";hintTitle.textContent="こと座 / Lyra";hintText.textContent="一等星：ベガ"}}
+function showToast(b,s){toastBig.textContent=b;toastSub.textContent=s;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),1700)}
+function pos(e){return{x:e.clientX,y:e.clientY}}
+function hitVega(x,y){const v=projected().find(o=>o.s.id==="vega");return Math.hypot(x-v.x,y-v.y)<38}
+function down(e){e.preventDefault();const p=pos(e);state.drag=true;state.lastX=p.x;state.lastY=p.y;if(state.phase===2&&hitVega(p.x,p.y))state.drag="vega"}
+function move(e){if(!state.drag)return;e.preventDefault();const p=pos(e),dx=p.x-state.lastX,dy=p.y-state.lastY;state.lastX=p.x;state.lastY=p.y;if(state.phase===1){state.yaw+=dx*.0085;state.pitch+=dy*.007;state.pitch=Math.max(-1,Math.min(1,state.pitch))}else if(state.drag==="vega"&&!state.completed){const m=Math.min(W,H);state.vegaOffset[0]+=dx/m;state.vegaOffset[1]+=dy/m;checkVega()}}
+function up(e){if(!state.drag)return;e.preventDefault();state.drag=false;if(state.phase===2)checkVega()}
+canvas.addEventListener("pointerdown",down,{passive:false});canvas.addEventListener("pointermove",move,{passive:false});canvas.addEventListener("pointerup",up,{passive:false});canvas.addEventListener("pointercancel",up,{passive:false});
+function checkVega(){if(Math.hypot(state.vegaOffset[0],state.vegaOffset[1])<.055&&!state.completed){state.vegaOffset=[0,0];state.completed=true;state.flash=1;showToast("✨ こと座完成！","一等星ベガが正しい位置に戻りました。");updateHUD()}}
+document.getElementById("hintBtn").onclick=()=>{if(state.phase===1){state.yaw+=(targetYaw-state.yaw)*.3;state.pitch+=(targetPitch-state.pitch)*.3;showToast("ヒント","正しい向きへ少し近づけました。")}else if(!state.completed){state.guide=!state.guide;showToast("ヒント",state.guide?"ベガの正解位置を表示します。":"ガイドを隠しました。")}};
+document.getElementById("restart").onclick=reset;
+</script>
+</body>
+</html>
